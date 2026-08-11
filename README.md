@@ -33,13 +33,17 @@ To fill one in, ask Claude:
 
 House style for recaps, based on what's already in the file:
 
-- **2–3 sentences**, second person ("you"), plain language.
+- **1–2 sentences, roughly 30–45 words.** The page is read on phones, and each
+  recap sits in a card — much longer and the card turns into a wall of text.
+- Second person ("you"), plain language.
 - Lead with **what the call was actually about** — the idea, framework, or theme.
 - **No client names, no individual wins, no raffle or prize talk, no logistics.**
   Members should get a feel for the content, not a roll call.
-- Keep specifics that make it worth clicking (the milkshake study, FEAR as False
-  Evidence Appearing Real, 0.8–1g protein per pound) — those are the hook.
-- `topic` is a short title-case phrase; `recap` is the paragraph underneath.
+- Keep the one specific that makes it worth clicking (the milkshake study, FEAR as
+  False Evidence Appearing Real, Wish/Outcome/Obstacle/Plan) — that's the hook.
+- `topic` is a short title-case phrase and becomes the card headline; `recap` is
+  the short paragraph under it. If `topic` is blank the card falls back to
+  "{Month} Elevation Call", so a new entry still renders before it's written up.
 
 ## Data shape
 

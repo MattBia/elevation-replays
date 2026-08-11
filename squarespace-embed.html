@@ -1,117 +1,252 @@
 <!-- BIA Monthly Elevation Call replays - auto-updated from GitHub -->
-<!-- Paste this into a Code Block on the /elevation-replays page. -->
+<!-- Paste this whole file into a Code Block on the /elevation-replays page. -->
+<!-- Deliberately inherits the site's fonts and text colour: no font-family and -->
+<!-- no literal colours, so it restyles itself if the Squarespace theme changes. -->
 
-<div id="bia-elevation">
-  <p id="bia-elevation-loading">Loading Elevation Calls…</p>
+<div class="el-wrap">
+  <div id="bia-elevation">
+    <p class="el-status">Loading Elevation Calls…</p>
+  </div>
 </div>
 
 <style>
-  #bia-elevation {
-    max-width: 640px;
+  .el-wrap {
+    /* container-type lets the cards respond to the COLUMN they sit in, not the
+       viewport - a Squarespace content column is often far narrower than the
+       screen, so viewport media queries would go two-up much too early. */
+    container-type: inline-size;
+    max-width: 940px;
     margin: 0 auto;
-    text-align: left;
+    /* Neutral grey works on both light and dark themes; the @supports block
+       below upgrades it to a tint derived from the theme's own text colour. */
+    --el-line: rgba(128, 128, 128, 0.30);
+    --el-line-strong: rgba(128, 128, 128, 0.55);
+    --el-tint: rgba(128, 128, 128, 0.06);
+    --el-tint-strong: rgba(128, 128, 128, 0.10);
   }
-  #bia-elevation .el-year {
+  @supports (background: color-mix(in srgb, currentColor 5%, transparent)) {
+    .el-wrap {
+      --el-line: color-mix(in srgb, currentColor 20%, transparent);
+      --el-line-strong: color-mix(in srgb, currentColor 45%, transparent);
+      --el-tint: color-mix(in srgb, currentColor 4%, transparent);
+      --el-tint-strong: color-mix(in srgb, currentColor 7%, transparent);
+    }
+  }
+
+  .el-status {
+    opacity: 0.7;
+    text-align: center;
+    margin: 2em 0;
+  }
+
+  /* ---- year divider ---- */
+  .el-year {
+    display: flex;
+    align-items: center;
+    gap: 0.9em;
+    margin: 2.6em 0 1.1em;
+    font-size: 0.78em;
     font-weight: 700;
-    font-size: 0.85em;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
     opacity: 0.55;
-    margin: 2.4em 0 0.9em;
-    padding-bottom: 0.4em;
-    border-bottom: 1px solid currentColor;
   }
-  #bia-elevation .el-year:first-child {
-    margin-top: 0;
+  .el-year::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--el-line);
   }
-  #bia-elevation .el-item {
-    margin: 0 0 1.9em;
+  .el-year:first-child { margin-top: 0; }
+
+  /* ---- card grid ---- */
+  .el-grid {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: 1fr;   /* mobile first */
+    gap: 0.85rem;
   }
-  #bia-elevation .el-link {
-    display: inline-block;
+  @container (min-width: 38rem) {
+    .el-grid { grid-template-columns: 1fr 1fr; gap: 1rem; }
+  }
+
+  /* ---- card ---- */
+  .el-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    /* Defensive: grid items default to min-width:auto, so an unbreakable string
+       (a pasted URL in a topic, say) could otherwise widen the whole track. */
+    min-width: 0;
+    overflow: hidden;
+    padding: 1.15rem 1.25rem 1.05rem;
+    border: 1px solid var(--el-line);
+    border-radius: 12px;
+    background: var(--el-tint);
+    color: inherit !important;      /* beat the theme's link colour */
+    text-decoration: none !important;
+    transition: transform 0.22s ease, border-color 0.22s ease,
+                background-color 0.22s ease, box-shadow 0.22s ease;
+    animation: el-rise 0.5s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+  }
+  /* the accent rail, drawn from the bottom up on hover */
+  .el-card::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: currentColor;
+    opacity: 0.55;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform 0.28s cubic-bezier(0.22, 0.8, 0.3, 1);
+  }
+  .el-card:hover,
+  .el-card:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--el-line-strong);
+    background: var(--el-tint-strong);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  }
+  .el-card:hover::before,
+  .el-card:focus-visible::before { transform: scaleY(1); }
+  .el-card:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+  }
+
+  .el-month {
+    display: block;
+    font-size: 0.7em;
     font-weight: 700;
-    font-size: 1.08em;
-    text-decoration: underline;
-    margin-bottom: 0.35em;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-bottom: 0.5em;
   }
-  #bia-elevation .el-topic {
-    font-style: italic;
-    opacity: 0.8;
-    margin: 0 0 0.4em;
+  .el-title {
+    display: block;
+    font-size: 1.12em;
+    font-weight: 700;
+    line-height: 1.28;
+    margin-bottom: 0.45em;
+    text-wrap: balance;            /* avoids a lonely last word on mobile */
   }
-  #bia-elevation .el-recap {
-    margin: 0;
-    line-height: 1.6;
-    opacity: 0.9;
+  .el-recap {
+    display: block;
+    font-size: 0.92em;
+    line-height: 1.55;
+    opacity: 0.78;
+    margin-bottom: 1em;
+  }
+  .el-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    margin-top: auto;              /* pins CTAs to a common baseline */
+    font-size: 0.82em;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .el-cta svg {
+    width: 0.85em;
+    height: 0.85em;
+    transition: transform 0.22s ease;
+  }
+  .el-card:hover .el-cta svg,
+  .el-card:focus-visible .el-cta svg { transform: translateX(3px); }
+
+  @keyframes el-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .el-card { animation: none; transition: border-color 0.2s ease; }
+    .el-card:hover, .el-card:focus-visible { transform: none; }
+    .el-card::before { transition: none; }
+    .el-cta svg { transition: none; }
   }
 </style>
 
 <script>
 (function () {
   var REPO = "MattBia/elevation-replays"; // raw.githubusercontent.com/<REPO>/main/elevation.json
-  var URL = "https://raw.githubusercontent.com/" + REPO + "/main/elevation.json?v=" + Date.now();
+  var SRC = "https://raw.githubusercontent.com/" + REPO + "/main/elevation.json?v=" + Date.now();
 
   var MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
 
-  fetch(URL, { cache: "no-store" })
+  var ARROW = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+              'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ' +
+              'aria-hidden="true"><path d="M2 8h11M9 4l4 4-4 4"/></svg>';
+
+  var root = document.getElementById("bia-elevation");
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text) n.textContent = text;   // textContent, so copy is never parsed as HTML
+    return n;
+  }
+
+  fetch(SRC, { cache: "no-store" })
     .then(function (r) {
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     })
     .then(function (data) {
-      var calls = data.calls.slice().sort(function (a, b) {
-        return a.date < b.date ? 1 : -1; // newest first
+      var calls = (data.calls || []).slice().sort(function (a, b) {
+        return a.date < b.date ? 1 : -1;   // newest first
       });
+      if (!calls.length) throw new Error("no calls in feed");
 
-      var container = document.getElementById("bia-elevation");
-      container.innerHTML = "";
+      root.innerHTML = "";
 
-      var currentYear = "";
-      calls.forEach(function (c) {
-        // Parse as plain date parts so the browser's timezone can't shift the month.
-        var parts = c.date.split("-"); // YYYY-MM-DD
-        var year = parts[0], monthIdx = parseInt(parts[1], 10) - 1;
+      var currentYear = null;
+      var grid = null;
+
+      calls.forEach(function (c, i) {
+        // Split the plain date parts rather than using Date(), so a browser in
+        // a behind-UTC timezone can't shift a call into the previous month.
+        var parts = String(c.date).split("-");
+        var year = parts[0];
+        var monthName = MONTHS[parseInt(parts[1], 10) - 1] || "";
 
         if (year !== currentYear) {
           currentYear = year;
-          var h = document.createElement("div");
-          h.className = "el-year";
-          h.textContent = year;
-          container.appendChild(h);
+          root.appendChild(el("div", "el-year", year));
+          grid = el("div", "el-grid");
+          root.appendChild(grid);
         }
 
-        var item = document.createElement("div");
-        item.className = "el-item";
+        var fallbackTitle = monthName + " Elevation Call";
 
-        var a = document.createElement("a");
-        a.className = "el-link";
-        a.href = c.url;
-        a.target = "_blank";
-        a.rel = "noopener";
-        a.textContent = MONTHS[monthIdx] + " Elevation Call";
-        item.appendChild(a);
+        var card = el("a", "el-card");
+        card.href = c.url;
+        card.target = "_blank";
+        card.rel = "noopener";
+        card.setAttribute("aria-label",
+          monthName + " " + year + " Elevation Call" + (c.topic ? " - " + c.topic : ""));
+        // Stagger the reveal, but cap it so late cards aren't left waiting.
+        card.style.animationDelay = Math.min(i, 10) * 45 + "ms";
 
-        if (c.topic) {
-          var t = document.createElement("p");
-          t.className = "el-topic";
-          t.textContent = c.topic;
-          item.appendChild(t);
-        }
+        card.appendChild(el("span", "el-month", monthName + " " + year));
+        card.appendChild(el("span", "el-title", c.topic || fallbackTitle));
+        if (c.recap) card.appendChild(el("span", "el-recap", c.recap));
 
-        if (c.recap) {
-          var p = document.createElement("p");
-          p.className = "el-recap";
-          p.textContent = c.recap;
-          item.appendChild(p);
-        }
+        var cta = el("span", "el-cta", "Watch the call");
+        cta.insertAdjacentHTML("beforeend", ARROW);
+        card.appendChild(cta);
 
-        container.appendChild(item);
+        grid.appendChild(card);
       });
     })
     .catch(function (err) {
-      document.getElementById("bia-elevation-loading").textContent =
-        "Couldn't load the Elevation Calls right now. Please refresh the page.";
+      root.innerHTML = "";
+      root.appendChild(el("p", "el-status",
+        "Couldn't load the Elevation Calls right now. Please refresh the page."));
       console.error("Elevation replays load failed:", err);
     });
 })();
