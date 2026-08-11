@@ -1,0 +1,50 @@
+name: Elevation Call Updater
+
+on:
+  schedule:
+    # Cron is UTC. The call runs Mondays 7:00-8:00 PM ET, so these slots are
+    # all Monday *evening* ET even though the UTC day is Tuesday:
+    #   01:00 UTC Tue = 9 PM Mon EDT / 8 PM Mon EST
+    #   02:00 UTC Tue = 10 PM Mon EDT / 9 PM Mon EST
+    #   03:00 UTC Tue = 11 PM Mon EDT / 10 PM Mon EST (final attempt)
+    # The script bails unless it's a Monday in ET, and it's idempotent, so
+    # extra runs are no-ops and later slots double as retries if Grain is
+    # slow to process the recording.
+    - cron: "0 1 * * 2"
+    - cron: "0 2 * * 2"
+    - cron: "0 3 * * 2"
+  workflow_dispatch:        # manual run button, just in case
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install requests
+
+      - name: Update elevation.json from Grain
+        env:
+          GRAIN_API_TOKEN_V2: ${{ secrets.GRAIN_API_TOKEN_V2 }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FINAL_ATTEMPT: ${{ github.event.schedule == '0 3 * * 2' && 'true' || 'false' }}
+        run: python scripts/update_elevation.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "elevation-bot"
+          git config user.email "actions@github.com"
+          if ! git diff --quiet elevation.json; then
+            git add elevation.json
+            git commit -m "Add Elevation Call for $(date +%Y-%m-%d)"
+            git push
+          else
+            echo "No changes to commit."
+          fi

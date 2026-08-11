@@ -1,0 +1,118 @@
+<!-- BIA Monthly Elevation Call replays - auto-updated from GitHub -->
+<!-- Paste this into a Code Block on the /elevation-replays page. -->
+
+<div id="bia-elevation">
+  <p id="bia-elevation-loading">Loading Elevation Calls…</p>
+</div>
+
+<style>
+  #bia-elevation {
+    max-width: 640px;
+    margin: 0 auto;
+    text-align: left;
+  }
+  #bia-elevation .el-year {
+    font-weight: 700;
+    font-size: 0.85em;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin: 2.4em 0 0.9em;
+    padding-bottom: 0.4em;
+    border-bottom: 1px solid currentColor;
+  }
+  #bia-elevation .el-year:first-child {
+    margin-top: 0;
+  }
+  #bia-elevation .el-item {
+    margin: 0 0 1.9em;
+  }
+  #bia-elevation .el-link {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 1.08em;
+    text-decoration: underline;
+    margin-bottom: 0.35em;
+  }
+  #bia-elevation .el-topic {
+    font-style: italic;
+    opacity: 0.8;
+    margin: 0 0 0.4em;
+  }
+  #bia-elevation .el-recap {
+    margin: 0;
+    line-height: 1.6;
+    opacity: 0.9;
+  }
+</style>
+
+<script>
+(function () {
+  var REPO = "MattBia/elevation-replays"; // raw.githubusercontent.com/<REPO>/main/elevation.json
+  var URL = "https://raw.githubusercontent.com/" + REPO + "/main/elevation.json?v=" + Date.now();
+
+  var MONTHS = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"];
+
+  fetch(URL, { cache: "no-store" })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      var calls = data.calls.slice().sort(function (a, b) {
+        return a.date < b.date ? 1 : -1; // newest first
+      });
+
+      var container = document.getElementById("bia-elevation");
+      container.innerHTML = "";
+
+      var currentYear = "";
+      calls.forEach(function (c) {
+        // Parse as plain date parts so the browser's timezone can't shift the month.
+        var parts = c.date.split("-"); // YYYY-MM-DD
+        var year = parts[0], monthIdx = parseInt(parts[1], 10) - 1;
+
+        if (year !== currentYear) {
+          currentYear = year;
+          var h = document.createElement("div");
+          h.className = "el-year";
+          h.textContent = year;
+          container.appendChild(h);
+        }
+
+        var item = document.createElement("div");
+        item.className = "el-item";
+
+        var a = document.createElement("a");
+        a.className = "el-link";
+        a.href = c.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = MONTHS[monthIdx] + " Elevation Call";
+        item.appendChild(a);
+
+        if (c.topic) {
+          var t = document.createElement("p");
+          t.className = "el-topic";
+          t.textContent = c.topic;
+          item.appendChild(t);
+        }
+
+        if (c.recap) {
+          var p = document.createElement("p");
+          p.className = "el-recap";
+          p.textContent = c.recap;
+          item.appendChild(p);
+        }
+
+        container.appendChild(item);
+      });
+    })
+    .catch(function (err) {
+      document.getElementById("bia-elevation-loading").textContent =
+        "Couldn't load the Elevation Calls right now. Please refresh the page.";
+      console.error("Elevation replays load failed:", err);
+    });
+})();
+</script>
