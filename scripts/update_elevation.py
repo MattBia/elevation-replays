@@ -144,7 +144,79 @@ def monday_ordinal(day: int) -> int:
     return (day - 1) // 7 + 1
 
 
+def self_check() -> int:
+    """Verify both credentials work, without touching elevation.json.
+
+    Run any day via the workflow's `check_only` dispatch input. The normal
+    path bails on non-Mondays before it ever calls Grain, so this is the
+    only way to confirm the secrets are actually good outside of a Monday.
+    """
+    print("== Self-check: credentials ==")
+
+    token = os.environ.get("GRAIN_API_TOKEN_V2", "")
+    print(f"GRAIN_API_TOKEN_V2 present: {bool(token)} (length {len(token)})")
+
+    try:
+        resp = requests.post(
+            GRAIN_RECORDINGS_URL,
+            headers=GRAIN_HEADERS,
+            json={"filter": {"title_search": "Elevation"}},
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        print(f"FAIL: could not reach Grain: {e}", file=sys.stderr)
+        return 1
+
+    print(f"Grain HTTP status: {resp.status_code}")
+    if resp.status_code in (401, 403):
+        print("FAIL: Grain rejected the token (bad or expired).", file=sys.stderr)
+        return 1
+    if not resp.ok:
+        print(f"FAIL: Grain returned {resp.status_code}: {resp.text[:300]}", file=sys.stderr)
+        return 1
+
+    recordings = resp.json().get("recordings", [])
+    matches = [r for r in recordings if TITLE_KEYWORD in (r.get("title") or "").lower()]
+    print(f"PASS: Grain auth OK - {len(recordings)} recordings returned, "
+          f"{len(matches)} matching '{TITLE_KEYWORD}'.")
+    if matches:
+        matches.sort(key=lambda r: r.get("start_datetime") or "", reverse=True)
+        newest = matches[0]
+        date_et = _recording_date_et(newest)
+        has_url = bool(extract_share_url(newest))
+        print(f"       Most recent: {newest.get('title')!r} on {date_et} (ET), "
+              f"share URL present: {has_url}")
+
+    webhook = os.environ.get("SLACK_WEBHOOK_URL", "")
+    print(f"SLACK_WEBHOOK_URL present: {bool(webhook)}")
+    if not webhook:
+        print("WARN: no Slack webhook set - notifications will be skipped "
+              "(the updater still works without it).")
+        return 0
+
+    try:
+        s = requests.post(
+            webhook,
+            json={"text": ":white_check_mark: Elevation Call updater self-check - "
+                          "Grain and Slack credentials are both working. "
+                          "(Test message, no action needed.)"},
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        print(f"FAIL: Slack webhook unreachable: {e}", file=sys.stderr)
+        return 1
+
+    if not s.ok:
+        print(f"FAIL: Slack returned {s.status_code}: {s.text[:200]}", file=sys.stderr)
+        return 1
+    print("PASS: Slack webhook accepted the test message.")
+    return 0
+
+
 def main() -> int:
+    if os.environ.get("CHECK_ONLY", "").lower() == "true":
+        return self_check()
+
     now_et = datetime.now(ET)
     today = now_et.strftime("%Y-%m-%d")
     this_month = now_et.strftime("%Y-%m")
