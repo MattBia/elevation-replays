@@ -40,8 +40,12 @@ import requests
 # Grain v2 public API. Recording search is a POST with a JSON filter body;
 # this matches the contract BIA's client_onboarding.py already uses in prod.
 GRAIN_RECORDINGS_URL = "https://api.grain.com/_/public-api/v2/recordings"
+# .strip() matters: pasting a secret into the GitHub UI very easily carries a
+# trailing newline, and requests rejects the whole header before it ever sends
+# ("Invalid leading whitespace, reserved character(s), or return character(s)").
+GRAIN_TOKEN = os.environ["GRAIN_API_TOKEN_V2"].strip()
 GRAIN_HEADERS = {
-    "Authorization": f"Bearer {os.environ['GRAIN_API_TOKEN_V2']}",
+    "Authorization": f"Bearer {GRAIN_TOKEN}",
     "Public-Api-Version": "2025-10-31",
     "Content-Type": "application/json",
 }
@@ -51,7 +55,7 @@ ET = ZoneInfo("America/New_York")
 
 
 def notify_slack(message: str) -> None:
-    url = os.environ.get("SLACK_WEBHOOK_URL")
+    url = os.environ.get("SLACK_WEBHOOK_URL", "").strip()
     if not url:
         return
     try:
@@ -153,8 +157,13 @@ def self_check() -> int:
     """
     print("== Self-check: credentials ==")
 
-    token = os.environ.get("GRAIN_API_TOKEN_V2", "")
-    print(f"GRAIN_API_TOKEN_V2 present: {bool(token)} (length {len(token)})")
+    raw = os.environ.get("GRAIN_API_TOKEN_V2", "")
+    print(f"GRAIN_API_TOKEN_V2 present: {bool(raw)} "
+          f"(raw length {len(raw)}, stripped {len(raw.strip())})")
+    if raw != raw.strip():
+        print("NOTE: token had surrounding whitespace/newline; stripped before use. "
+              "Harmless here, but worth re-pasting the secret without the trailing "
+              "newline if you set it by piping a file.")
 
     try:
         resp = requests.post(
