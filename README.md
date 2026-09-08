@@ -10,7 +10,10 @@ Same shape as [`ph-replays`](../ph-replays), with one difference: each entry car
 ## How it works
 
 1. A GitHub Action runs Monday evenings and calls `scripts/update_elevation.py`.
-2. The script asks Grain for a recording titled "…Elevation…" that started **today in ET**.
+2. The script asks Grain for a recording titled "…Elevation…" that started on the
+   **most recent Monday in ET**. Not "today": GitHub fires cron on low-traffic repos
+   hours late, and every scheduled run in Aug–Sep 2026 landed after midnight ET and
+   bailed as "not a Monday" before this was changed.
 3. If it finds one, it appends `{date, url, topic: "", recap: ""}` to `elevation.json`.
 4. A Squarespace Code Block (`squarespace-embed.html`) fetches the raw JSON from
    GitHub and renders the list, newest first, grouped by year.
@@ -18,6 +21,22 @@ Same shape as [`ph-replays`](../ph-replays), with one difference: each entry car
 The call is on the **first or second Monday** of the month, at 7:00–8:00 PM ET.
 The workflow runs every Monday and exits quietly when there's no call. A month is
 only reported as missed once its **second** Monday passes with nothing posted.
+
+## Stream Deck button (manual run)
+
+`workflow_dispatch` runs (the Stream Deck button in `../streamdeck-actions`, or
+"Run workflow" in the Actions tab) set `MANUAL=true`, which changes two things:
+
+- It looks for the newest Elevation Call in the **last 13 days** instead of the most
+  recent Monday — long enough that a press in second-Monday week still rescues a
+  first-Monday call, short enough that it can't "find" last month's call.
+- "Nothing found" is a **failure** (exit 1, Slack `:hourglass:` note) instead of a
+  quiet no-op. That's deliberate: the `check-manual-run` job makes the scheduled
+  slots stand down when a *successful* manual run happened in the last 12 hours,
+  so a press that came before Grain finished processing must not count.
+
+Every run ends with a `RESULT: …` line; the button shows that line in its notification.
+The `check_only` input still works for a credential self-check on any day.
 
 ## Writing the recap
 
@@ -74,14 +93,12 @@ every call on a Tuesday.
 - Share link is the `recording_url` field (`/share/recording/<id>/<token>`).
 - Recordings are auto-shared.
 
-## Setup steps (Matt)
+## Setup
 
-- [ ] Create the GitHub repo `MattBia/elevation-replays` and push this folder.
-- [ ] Add repo secret `GRAIN_API_TOKEN_V2` (same value `ph-replays` uses).
-- [ ] Optionally add `SLACK_WEBHOOK_URL`.
+- [x] GitHub repo `MattBia/elevation-replays` (public), Actions write permission.
+- [x] Repo secrets `GRAIN_API_TOKEN_V2` and `SLACK_WEBHOOK_URL`.
 - [ ] Create the `/elevation-replays` Squarespace page and paste
-      `squarespace-embed.html` into a Code Block.
-- [ ] If the repo name differs, update `REPO` at the top of the embed's `<script>`.
+      `squarespace-embed.html` into a Code Block (`REPO` is already set).
 
 ## History note
 

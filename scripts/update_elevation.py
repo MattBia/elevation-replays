@@ -20,10 +20,24 @@ Env vars:
   SLACK_WEBHOOK_URL   optional - posts a note on success or final failure
   FINAL_ATTEMPT       optional - "true" on the last cron slot of the evening;
                       controls whether a miss is treated as a failure
+  MANUAL              optional - "true" when triggered by hand (Stream Deck /
+                      "Run workflow"). Looks for the newest Elevation Call in
+                      the last MANUAL_LOOKBACK_DAYS instead of the most recent
+                      Monday, and treats "nothing found" as a failure so the
+                      scheduled runs know they still have work to do.
+
+Scheduled runs target the most recent Monday (ET) rather than "today" because
+GitHub fires cron jobs hours late on low-traffic repos. Every scheduled run from
+Aug-Sep 2026 landed after midnight ET and bailed as "not a Monday" - the fix is
+to key everything off the Monday the run was *meant* for.
 
 Exit codes:
   0 = entry added, already present, or nothing expected today
-  1 = hard error, or the month's call is missing after its second Monday
+  1 = hard error, the month's call missing after its second Monday, or
+      not-found on a manual run
+
+The last line of output is always "RESULT: ..." so a caller (the Stream Deck
+button) can show it without parsing the whole log.
 """
 
 from __future__ import annotations
@@ -31,7 +45,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -52,6 +66,12 @@ GRAIN_HEADERS = {
 CALLS_PATH = Path(__file__).resolve().parent.parent / "elevation.json"
 TITLE_KEYWORD = "elevation"  # real title is "BIA Monthly Elevation Call"
 ET = ZoneInfo("America/New_York")
+MONDAY = 0
+# Manual runs look back this many days (inclusive). Long enough that a press in
+# second-Monday week still finds a first-Monday call the schedule missed, but
+# shorter than the gap to the previous month's call, so a press before this
+# month's call can't "find" last month's and report success.
+MANUAL_LOOKBACK_DAYS = 13
 
 
 def notify_slack(message: str) -> None:
@@ -95,12 +115,17 @@ def _recording_date_et(recording: dict) -> str | None:
     return dt.astimezone(ET).strftime("%Y-%m-%d")
 
 
-def fetch_todays_call(today: str) -> dict | None:
-    """Return the Grain recording dict for today's Elevation Call, or None.
+def most_recent_monday(today: date) -> date:
+    """The most recent Monday on or before `today` (today itself if Monday)."""
+    return today - timedelta(days=(today.weekday() - MONDAY) % 7)
 
-    `today` is a YYYY-MM-DD string in ET. Search is a POST with a title filter
-    (Grain v2), then we keep only recordings that (a) contain the "Elevation"
-    keyword and (b) actually started today in ET.
+
+def fetch_call(start: date, end: date) -> dict | None:
+    """Return the newest Grain Elevation Call recording dated start..end (ET), or None.
+
+    Search is a POST with a title filter (Grain v2), then we keep only
+    recordings that (a) contain the "Elevation" keyword and (b) started within
+    the window in ET. Newest wins if there are several.
     """
     resp = requests.post(
         GRAIN_RECORDINGS_URL,
@@ -111,14 +136,16 @@ def fetch_todays_call(today: str) -> dict | None:
     resp.raise_for_status()
     recordings = resp.json().get("recordings", [])
 
-    matches = [
-        r for r in recordings
-        if TITLE_KEYWORD in (r.get("title") or "").lower()
-        and _recording_date_et(r) == today
-    ]
+    lo, hi = start.isoformat(), end.isoformat()
+    matches = []
+    for r in recordings:
+        if TITLE_KEYWORD not in (r.get("title") or "").lower():
+            continue
+        d = _recording_date_et(r)
+        if d and lo <= d <= hi:
+            matches.append(r)
     if not matches:
         return None
-    # If somehow multiple today, take the most recent start.
     matches.sort(key=lambda r: r.get("start_datetime") or "", reverse=True)
     return matches[0]
 
@@ -151,9 +178,8 @@ def monday_ordinal(day: int) -> int:
 def self_check() -> int:
     """Verify both credentials work, without touching elevation.json.
 
-    Run any day via the workflow's `check_only` dispatch input. The normal
-    path bails on non-Mondays before it ever calls Grain, so this is the
-    only way to confirm the secrets are actually good outside of a Monday.
+    Run any day via the workflow's `check_only` dispatch input. Confirms the
+    secrets are good without touching the page or Slack-alarming anyone.
     """
     print("== Self-check: credentials ==")
 
@@ -222,74 +248,113 @@ def self_check() -> int:
     return 0
 
 
+def result(msg: str) -> None:
+    """Final status line; the Stream Deck button surfaces this verbatim."""
+    print(f"RESULT: {msg}")
+
+
 def main() -> int:
     if os.environ.get("CHECK_ONLY", "").lower() == "true":
-        return self_check()
+        rc = self_check()
+        result("Credential self-check " + ("passed." if rc == 0 else "FAILED - see log."))
+        return rc
 
     now_et = datetime.now(ET)
-    today = now_et.strftime("%Y-%m-%d")
-    this_month = now_et.strftime("%Y-%m")
+    today = now_et.date()
     final_attempt = os.environ.get("FINAL_ATTEMPT", "").lower() == "true"
-
-    if now_et.weekday() != 0:  # 0 = Monday
-        print(f"{today} is not a Monday in ET. Nothing to do.")
-        return 0
+    manual = os.environ.get("MANUAL", "").lower() == "true"
 
     data = load_calls()
+    posted_months = {c["date"][:7] for c in data["calls"]}
 
-    # Idempotency: bail if this month is already posted (earlier Monday or slot)
-    if any(c["date"].startswith(this_month) for c in data["calls"]):
-        print(f"Entry for {this_month} already exists. Nothing to do.")
-        return 0
+    if manual:
+        start = today - timedelta(days=MANUAL_LOOKBACK_DAYS)
+        label = f"the last {MANUAL_LOOKBACK_DAYS} days"
+    else:
+        # The Monday this run is for: today if it's still Monday in ET, or
+        # yesterday when GitHub's cron delay pushed us past midnight.
+        start = most_recent_monday(today)
+        label = start.isoformat()
+        month = start.strftime("%Y-%m")
+        # Idempotency: bail if this month is already posted (earlier Monday,
+        # earlier slot, or a button press).
+        if month in posted_months:
+            print(f"Entry for {month} already exists. Nothing to do.")
+            result(f"Already posted for {month}. Nothing to do.")
+            return 0
 
     try:
-        recording = fetch_todays_call(today)
+        recording = fetch_call(start, today)
     except requests.RequestException as e:
         print(f"Grain API error: {e}", file=sys.stderr)
         notify_slack(f":warning: Elevation Call updater hit a Grain API error: {e}")
+        result(f"Grain API error: {e}")
         return 1
 
     if recording is None:
-        which = monday_ordinal(now_et.day)
-        print(f"No Elevation Call recording in Grain for {today} (Monday #{which}).")
+        if manual:
+            print(f"No Elevation Call recording in Grain for {label}.")
+            # Fail so the scheduled runs don't stand down on our account.
+            notify_slack(
+                f":hourglass: Elevation Call button pressed, but Grain has no Elevation "
+                f"Call recording from {label} yet. Try again in a few minutes, or let "
+                "the scheduled Monday-night checks pick it up."
+            )
+            result("No new recording in Grain yet. Try again in a few minutes.")
+            return 1
+        which = monday_ordinal(start.day)
+        print(f"No Elevation Call recording in Grain for {label} (Monday #{which}).")
         # The call is first OR second Monday. Only sound the alarm once the
         # second Monday has come and gone with nothing posted for the month.
         if final_attempt and which >= 2:
             notify_slack(
-                f":x: No Elevation Call has been posted for {this_month} - "
-                f"the second Monday ({today}) passed with no matching Grain "
+                f":x: No Elevation Call has been posted for {month} - "
+                f"the second Monday ({label}) passed with no matching Grain "
                 "recording. Check that the recording title contains "
                 "'Elevation', or add the link manually."
             )
+            result(f"NOT posted for {month} - second Monday passed with no recording.")
             return 1
+        result(f"Nothing for {label} (Monday #{which}); a later run will retry.")
         return 0  # first Monday with no call is normal - it's a second-Monday month
+
+    rec_date = _recording_date_et(recording)
+    rec_month = rec_date[:7]
+    if rec_month in posted_months:
+        # Manual path: the newest recording in the window is already on the page.
+        print(f"Entry for {rec_month} already exists. Nothing to do.")
+        result(f"Already posted for {rec_month}. Nothing new in Grain.")
+        return 0
 
     share_url = extract_share_url(recording)
     if not share_url:
         rec_id = recording.get("id", "unknown")
         msg = (
-            f"Found recording {rec_id} for {today} but it has no public share URL. "
+            f"Found recording {rec_id} for {rec_date} but it has no public share URL. "
             "The recording likely needs sharing enabled in Grain."
         )
         print(msg, file=sys.stderr)
         notify_slack(f":x: Elevation Call updater: {msg}")
+        result(f"Found {rec_date} but it has no public share link - enable sharing in Grain.")
         return 1
 
     # topic/recap stay empty until a human (or Claude) writes them - the embed
     # renders the entry as a bare link in the meantime rather than breaking.
     data["calls"].append({
-        "date": today,
+        "date": rec_date,
         "url": share_url,
         "topic": "",
         "recap": "",
     })
     save_calls(data)
-    print(f"Added {today} -> {share_url}")
+    print(f"Added {rec_date} -> {share_url}")
+    month_name = date.fromisoformat(rec_date).strftime("%B")
     notify_slack(
-        f":white_check_mark: {now_et.strftime('%B')} Elevation Call posted to "
+        f":white_check_mark: {month_name} Elevation Call posted to "
         f"bianutrition.com/elevation-replays\n{share_url}\n"
         ":pencil: Still needs a *topic* and *recap* - run the recap step to fill them in."
     )
+    result(f"Posted {rec_date} to bianutrition.com/elevation-replays (recap still needed)")
     return 0
 
 

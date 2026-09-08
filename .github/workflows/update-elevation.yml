@@ -13,7 +13,7 @@ on:
     - cron: "0 1 * * 2"
     - cron: "0 2 * * 2"
     - cron: "0 3 * * 2"
-  workflow_dispatch:        # manual run button, just in case
+  workflow_dispatch:        # Stream Deck button / manual run
     inputs:
       check_only:
         description: "Self-check credentials only (no changes to elevation.json)"
@@ -24,7 +24,41 @@ permissions:
   contents: write
 
 jobs:
+  # A button press (workflow_dispatch) that actually posted the replay makes the
+  # scheduled slots stand down. Only *successful* manual runs count, and the
+  # updater fails a manual run that finds nothing - so a press that came too
+  # early never suppresses the schedule. 12h keeps a press the day before from
+  # counting (cron slots can fire hours late, so it's not tighter).
+  check-manual-run:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      skip: ${{ steps.guard.outputs.skip }}
+    steps:
+      - name: Skip if a manual run already posted this one
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cutoff=$(date -u -d '12 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          count=$(gh api \
+            "repos/${{ github.repository }}/actions/workflows/update-elevation.yml/runs?event=workflow_dispatch&status=success&created=%3E${cutoff}" \
+            --jq '.total_count')
+          if [ "$count" -gt 0 ]; then
+            echo "Manual run already handled this ($count since $cutoff) - skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
   update:
+    needs: check-manual-run
+    if: needs.check-manual-run.outputs.skip != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,6 +73,7 @@ jobs:
         env:
           GRAIN_API_TOKEN_V2: ${{ secrets.GRAIN_API_TOKEN_V2 }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           FINAL_ATTEMPT: ${{ github.event.schedule == '0 3 * * 2' && 'true' || 'false' }}
           CHECK_ONLY: ${{ inputs.check_only && 'true' || 'false' }}
         run: python scripts/update_elevation.py
