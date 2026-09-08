@@ -229,6 +229,10 @@ def main() -> int:
             continue
 
         names = speaker_first_names(transcript)
+        # Observability for the name-leak guard: if this is 0 on a real call,
+        # Grain's transcript line format changed and the regex needs updating.
+        print(f"{call['date']}: transcript {len(transcript.split())} words, "
+              f"{len(names)} non-host speaker name(s) detected for the leak check")
         examples = examples_block(calls, call["date"])
         note = ""
         out, problems = None, ["not attempted"]
