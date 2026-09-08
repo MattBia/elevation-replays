@@ -107,9 +107,10 @@ def notify_slack(message: str) -> None:
     if not url:
         return
     try:
-        requests.post(url, json={"text": message}, timeout=10)
-    except requests.RequestException:
-        pass
+        r = requests.post(url, json={"text": message}, timeout=10)
+        print(f"Slack notified ({r.status_code}).")
+    except requests.RequestException as e:
+        print(f"Slack notify failed: {e}")
 
 
 def result(msg: str) -> None:
