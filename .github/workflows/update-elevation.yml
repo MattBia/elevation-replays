@@ -67,7 +67,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install requests
+      - run: pip install requests anthropic
 
       - name: Update elevation.json from Grain
         env:
@@ -78,14 +78,24 @@ jobs:
           CHECK_ONLY: ${{ inputs.check_only && 'true' || 'false' }}
         run: python scripts/update_elevation.py
 
+      # Runs even if the step above failed (e.g. a button press that found no new
+      # call) so an earlier call that is still missing its recap gets written.
+      - name: Write topic + recap for any call missing one
+        if: ${{ !cancelled() && !inputs.check_only }}
+        env:
+          GRAIN_API_TOKEN_V2: ${{ secrets.GRAIN_API_TOKEN_V2 }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python scripts/write_recap.py
+
       - name: Commit and push if changed
-        if: ${{ !inputs.check_only }}
+        if: ${{ !cancelled() && !inputs.check_only }}
         run: |
           git config user.name "elevation-bot"
           git config user.email "actions@github.com"
           if ! git diff --quiet elevation.json; then
             git add elevation.json
-            git commit -m "Add Elevation Call for $(date +%Y-%m-%d)"
+            git commit -m "Update Elevation Call replays ($(date +%Y-%m-%d))"
             git push
           else
             echo "No changes to commit."

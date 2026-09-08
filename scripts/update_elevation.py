@@ -6,10 +6,10 @@ Runs Monday evenings via GitHub Actions. If an Elevation Call happened today,
 grabs its Grain share URL and upserts it into elevation.json (keyed by date, so
 re-runs are harmless).
 
-The `topic` and `recap` fields are left blank on purpose - they require reading
-the call and writing a client-facing summary, which is a judgment call, not a
-string transform. The embed hides blank fields, so a new entry shows up as a
-plain link until the recap is filled in. Slack gets pinged when that's pending.
+The `topic` and `recap` fields are written blank here and filled in by
+scripts/write_recap.py, which runs as the next workflow step (transcript ->
+Claude -> style check). The embed hides blank fields, so if the recap step can't
+run yet the entry still shows up as a plain link.
 
 The call lands on the first OR second Monday of the month, so this runs every
 Monday and simply exits quietly when there's nothing to post. A month is only
@@ -338,8 +338,8 @@ def main() -> int:
         result(f"Found {rec_date} but it has no public share link - enable sharing in Grain.")
         return 1
 
-    # topic/recap stay empty until a human (or Claude) writes them - the embed
-    # renders the entry as a bare link in the meantime rather than breaking.
+    # topic/recap start empty; scripts/write_recap.py (next workflow step) fills
+    # them from the transcript. The embed renders a bare link until then.
     data["calls"].append({
         "date": rec_date,
         "url": share_url,
@@ -351,10 +351,9 @@ def main() -> int:
     month_name = date.fromisoformat(rec_date).strftime("%B")
     notify_slack(
         f":white_check_mark: {month_name} Elevation Call posted to "
-        f"bianutrition.com/elevation-replays\n{share_url}\n"
-        ":pencil: Still needs a *topic* and *recap* - run the recap step to fill them in."
+        f"bianutrition.com/elevation-replays\n{share_url}"
     )
-    result(f"Posted {rec_date} to bianutrition.com/elevation-replays (recap still needed)")
+    result(f"Posted {rec_date} to bianutrition.com/elevation-replays")
     return 0
 
 

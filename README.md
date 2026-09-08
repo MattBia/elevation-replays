@@ -15,7 +15,10 @@ Same shape as [`ph-replays`](../ph-replays), with one difference: each entry car
    hours late, and every scheduled run in Aug–Sep 2026 landed after midnight ET and
    bailed as "not a Monday" before this was changed.
 3. If it finds one, it appends `{date, url, topic: "", recap: ""}` to `elevation.json`.
-4. A Squarespace Code Block (`squarespace-embed.html`) fetches the raw JSON from
+4. `scripts/write_recap.py` then pulls the call's transcript from Grain, has Claude
+   write the `topic` + `recap` in the house style below, checks the draft against the
+   style rules (length, no participant names, no prize talk), and fills them in.
+5. A Squarespace Code Block (`squarespace-embed.html`) fetches the raw JSON from
    GitHub and renders the list, newest first, grouped by year.
 
 The call is on the **first or second Monday** of the month, at 7:00–8:00 PM ET.
@@ -38,19 +41,27 @@ only reported as missed once its **second** Monday passes with nothing posted.
 Every run ends with a `RESULT: …` line; the button shows that line in its notification.
 The `check_only` input still works for a credential self-check on any day.
 
-## Writing the recap
+## The recap
 
-`topic` and `recap` are intentionally left blank by the updater. Summarizing an
-hour-long call into something worth reading is a judgment call, not a string
-transform, so it stays a deliberate step. The embed hides blank fields, so a new
-call appears as a plain link until the recap is written.
+`write_recap.py` runs on every workflow run and writes a topic + recap for any call
+that is missing one, from the **transcript** (`/recordings/{id}/transcript.txt`), never
+from Grain's AI summary. It uses `claude-opus-5` with a JSON-schema output and
+Anthropic's server-side refusal fallback enabled. The four most recent finished recaps
+are passed in as voice examples, so the page stays consistent with itself.
 
-To fill one in, ask Claude:
+Drafts are checked before they're saved: 15–55 words, topic ≤ 9 words, no
+raffle/prize words, no first name of any non-host speaker from the transcript, no
+"Michelle". A failing draft gets one retry with the problems listed; if it still fails,
+the entry stays blank and Slack gets a `:warning:` so you can write it by hand.
 
-> Read the Grain notes for the latest BIA Elevation Call and write the topic + recap
-> for `elevation.json`.
+Needs the `ANTHROPIC_API_KEY` repo secret. Without it the link still posts and the
+recap step logs a warning; the next run with the key fills it in.
 
-House style for recaps, based on what's already in the file:
+To re-do a recap, blank out `topic` and `recap` for that entry in `elevation.json`
+and run the workflow (or press the Stream Deck button). To tweak wording, just edit
+`elevation.json` directly.
+
+House style for recaps (this is what the prompt enforces):
 
 - **1–2 sentences, roughly 30–45 words.** The page is read on phones, and each
   recap sits in a card — much longer and the card turns into a wall of text.
@@ -97,6 +108,7 @@ every call on a Tuesday.
 
 - [x] GitHub repo `MattBia/elevation-replays` (public), Actions write permission.
 - [x] Repo secrets `GRAIN_API_TOKEN_V2` and `SLACK_WEBHOOK_URL`.
+- [ ] Repo secret `ANTHROPIC_API_KEY` (same as the one in bia-executive-assisstant / bia-feedback-bot) for the recap step.
 - [ ] Create the `/elevation-replays` Squarespace page and paste
       `squarespace-embed.html` into a Code Block (`REPO` is already set).
 
