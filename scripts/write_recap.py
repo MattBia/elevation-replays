@@ -51,6 +51,17 @@ CALLS_PATH = Path(__file__).resolve().parent.parent / "elevation.json"
 MODEL = "claude-opus-5"
 HOSTS = {"michelle", "matt", "chelley", "coach"}   # never treated as client names
 BANNED = re.compile(r"\b(raffle|prize|giveaway|winner|drawing|gift card)\b", re.I)
+# AI tells Matt has banned across all BIA-facing copy (2026-09-01 / 2026-09-08).
+DASHES = re.compile(r"[\u2014\u2013]|\s-\s|--")
+CONTRASTS = [
+    # "It's not a diet. It's a lifestyle." (sentence-split version of the contrast)
+    re.compile(r"\b(it'?s|that'?s|this is)\s+not\b[^.;!?]{1,60}[.;]\s*(it'?s|that'?s|this is)\b", re.I),
+    re.compile(r"\b(not|isn'?t|aren'?t|wasn'?t)\s+(just|only|about|because)\b", re.I),
+    re.compile(r"\b(not|isn'?t|aren'?t)\b[^.;!?]{1,60},\s*(it'?s|that'?s|they'?re|but|just)\b", re.I),
+    re.compile(r",\s*not\s+(a|an|the|your|to|just|about)\b", re.I),
+    re.compile(r"\b(less about|more than just|rather than [^.;]{1,40}, it)\b", re.I),
+]
+CALLOUTS = re.compile(r"\b(sound familiar|this (one|call) is for you|if you'?ve ever)\b", re.I)
 MAX_RECAP_WORDS = 55
 MAX_TOPIC_WORDS = 9
 
@@ -76,6 +87,16 @@ Hard rules:
     (dates, links, homework reminders, tech issues, who joined late).
   - Do not mention Michelle or the host by name in the recap.
   - Do not start with "In this call" or "This call".
+
+Voice rules (these are checked mechanically and a draft that breaks them is thrown out):
+  - No em dashes or en dashes anywhere. Use a period, a comma, or "to" for ranges.
+  - No "it's not X, it's Y" / "not about X, about Y" / "not just X, but Y" /
+    "X, not Y" contrast constructions of any kind. Say the thing directly.
+  - No rhetorical questions.
+  - No reader call-outs like "sound familiar?" or "this one is for you".
+  - No neat parallel triads for rhythm.
+  The test: would a busy person writing a quick note to members have typed this
+  sentence? Short plain sentences, specific to what was actually said.
 
 Here are recent recaps from the page, in the voice to match:
 """
@@ -140,6 +161,18 @@ def style_problems(topic: str, recap: str, names: set[str]) -> list[str]:
         problems.append(f"names a participant: {', '.join(sorted(leaked))}")
     if re.search(r"\bMichelle\b", recap):
         problems.append("names the host")
+    text = topic + " " + recap
+    if DASHES.search(text):
+        problems.append("uses a dash (em/en dash or ' - '); use a period or comma instead")
+    for pat in CONTRASTS:
+        m = pat.search(text)
+        if m:
+            problems.append(f"uses a 'not X, it's Y' style contrast ({m.group(0)!r}); say it directly")
+            break
+    if "?" in text:
+        problems.append("contains a question; no rhetorical questions")
+    if CALLOUTS.search(text):
+        problems.append("uses a reader call-out phrase")
     return problems
 
 
